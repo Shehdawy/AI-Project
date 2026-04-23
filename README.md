@@ -29,36 +29,34 @@
 pip install pygame scikit-learn pandas numpy matplotlib streamlit joblib
 ```
 
----
-
 ## 🚀 How to Run
 
 ### Option 1 — Full Game + AI Pipeline
 ```bash
-python main.py
+python -m main.py
 ```
 Starts the game. After you quit (ESC), it trains the ML model, runs clustering, and generates plots.
 
 ### Option 2 — Demo Mode (no Pygame needed, great for testing)
 ```bash
-python main.py --demo
+python -m main.py --demo
 ```
 Generates 6 synthetic sessions of realistic gameplay data, then runs the full AI pipeline.
 
 ### Option 3 — Launch the Dashboard
 ```bash
-streamlit run dashboard.py
+python -m streamlit run dashboard.py
 ```
 Opens in your browser at `http://localhost:8501`
 
 ### Option 4 — Train model only
 ```bash
-python main.py --train
+python -m main.py --train
 ```
 
 ### Option 5 — Generate plots only
 ```bash
-python main.py --viz
+python -m main.py --viz
 ```
 
 ---
@@ -188,18 +186,6 @@ game.py  ──► data_collector.py  ──► dataset.csv
 
 ### When both are used together:
 Unsupervised clustering can **validate** or **refine** supervised labels. If our rule-based "Pro" boundary is wrong, K-Means clusters might reveal a different natural boundary.
-
----
-
-## 🌍 Real-World Applications
-
-| Domain | Similar AI Application |
-|---|---|
-| Gaming | Adaptive difficulty in AAA games (e.g., Left 4 Dead's AI Director) |
-| Sports Science | Reaction time analysis for esports athletes |
-| Healthcare | Motor skill assessment and cognitive decline detection |
-| Education | Adaptive learning platforms (Duolingo difficulty engine) |
-| Security | Behavioral biometrics — identifying users by mouse patterns |
 
 ---
 
