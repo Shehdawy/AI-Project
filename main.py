@@ -13,7 +13,7 @@ Usage:
 """
 
 # ─────────────────────────────────────────────────────────────
-# 📦 Standard Libraries
+# Standard Libraries
 # ─────────────────────────────────────────────────────────────
 import argparse        # For command line arguments (--demo, --train, etc.)
 import sys             # System-level operations (not heavily used here)
@@ -32,14 +32,14 @@ from clustering import PlayerClustering
 from visualization import generate_all_plots
 
 # ─────────────────────────────────────────────────────────────
-# 🆔 Unique Session ID
+# Unique Session ID
 # ─────────────────────────────────────────────────────────────
 # Create a unique ID based on current time
 SESSION_ID = f"session_{int(time.time())}"
 
 
 # ─────────────────────────────────────────────────────────────
-# 🧪 Demo Data Generator
+#  Demo Data Generator
 # ─────────────────────────────────────────────────────────────
 def generate_demo_data(n_sessions: int = 6, events_per_session: int = 50):
     """
@@ -104,7 +104,7 @@ def generate_demo_data(n_sessions: int = 6, events_per_session: int = 50):
 
 
 # ─────────────────────────────────────────────────────────────
-# ⚡ Adaptive Difficulty (Background Thread)
+#  Adaptive Difficulty (Background Thread)
 # ─────────────────────────────────────────────────────────────
 def adaptive_difficulty_loop(game, clf: SkillClassifier, interval: float = 5.0):
     """
@@ -148,7 +148,7 @@ def adaptive_difficulty_loop(game, clf: SkillClassifier, interval: float = 5.0):
 
 
 # ─────────────────────────────────────────────────────────────
-# 🎮 Run Game with AI
+#  Run Game with AI
 # ─────────────────────────────────────────────────────────────
 def run_game_with_ai():
     """Run full pipeline: game + AI"""
@@ -184,7 +184,7 @@ def run_game_with_ai():
 
 
 # ─────────────────────────────────────────────────────────────
-# 📊 Post-Game Analysis
+# Post-Game Analysis
 # ─────────────────────────────────────────────────────────────
 def post_session_analysis(session_id: str = None):
 
@@ -240,7 +240,7 @@ def post_session_analysis(session_id: str = None):
 
 
 # ─────────────────────────────────────────────────────────────
-# 🧾 CLI (Command Line Interface)
+#  CLI (Command Line Interface)
 # ─────────────────────────────────────────────────────────────
 if __name__ == "__main__":
 
