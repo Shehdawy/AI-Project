@@ -24,7 +24,7 @@ import numpy as np     # Math & statistics (mean, std, etc.)
 from pathlib import Path  # File path handling
 
 # ─────────────────────────────────────────────────────────────
-# 📦 Project Modules (Your files)
+#  Project Modules (Your files)
 # ─────────────────────────────────────────────────────────────
 from data_collector import DataCollector, CSV_PATH
 from model import SkillClassifier, build_features, FEATURE_COLS
