@@ -1,254 +1,213 @@
 """
-game.py — Pygame Aim Trainer
-Game Developer Module
-Handles: target spawning, click detection, scoring, reaction time, difficulty scaling
+game.py — Pygame Aim Trainer Game
+
+Role:
+- Build the main aim trainer game
+- Includes adaptive difficulty system
 """
 
 import pygame
 import random
 import time
-import math
+import sys
 from data_collector import DataCollector
 
-# ─── Constants ────────────────────────────────────────────────────────────────
-WIDTH, HEIGHT = 800, 600
-FPS = 60
-FONT_NAME = "monospace"
+# ── Window & Color Constants ─────────────────────────────────────────────
+WINDOW_W, WINDOW_H = 800, 600
 
-# Difficulty configs: (target_size, target_speed, spawn_interval_seconds)
-DIFFICULTY_CONFIG = {
-    "Beginner": {"size": 50, "speed": 1.5, "interval": 2.0},
-    "Average":  {"size": 32, "speed": 2.5, "interval": 1.2},
-    "Pro":      {"size": 18, "speed": 4.0, "interval": 0.7},
+BLACK  = (15, 15, 20)
+WHITE  = (240, 240, 240)
+RED    = (220, 50, 50)
+GREEN  = (50, 200, 100)
+YELLOW = (240, 200, 40)
+BLUE   = (60, 120, 220)
+GRAY   = (80, 80, 90)
+ORANGE = (240, 130, 40)
+
+# ── Difficulty Settings ──────────────────────────────────────────────────
+DIFFICULTY_SETTINGS = {
+    1: {"target_size": 45, "speed": 0},  # Beginner
+    2: {"target_size": 35, "speed": 1},  # Medium
+    3: {"target_size": 25, "speed": 2},  # Hard
 }
 
-# Colors
-BG_COLOR       = (15, 15, 25)
-TARGET_COLOR   = (220, 60, 60)
-TARGET_OUTLINE = (255, 120, 120)
-HIT_COLOR      = (80, 220, 120)
-MISS_COLOR     = (220, 80, 80)
-TEXT_COLOR     = (220, 220, 240)
-DIM_COLOR      = (100, 100, 120)
-HUD_BG         = (25, 25, 40)
-
-
+# ── Target Class ─────────────────────────────────────────────────────────
 class Target:
-    """A single circular target on screen."""
+    """A single clickable target on screen."""
 
-    def __init__(self, x, y, size, speed):
-        self.x = x
-        self.y = y
-        self.size = size
-        self.speed = speed
-        self.alive = True
+    def __init__(self, difficulty: int):
+        settings = DIFFICULTY_SETTINGS[difficulty]
+
+        self.size = settings["target_size"]
+        self.speed = settings["speed"]
+
+        self.x = random.randint(self.size, WINDOW_W - self.size)
+        self.y = random.randint(80, WINDOW_H - self.size)
+
         self.spawn_time = time.time()
-        # Pulsing animation
-        self.pulse = 0
 
-    def update(self):
-        self.pulse = (self.pulse + 0.08) % (2 * math.pi)
+        # Movement direction (for higher difficulty)
+        self.dx = random.choice([-1, 1]) * self.speed
+        self.dy = random.choice([-1, 1]) * self.speed
 
-    def draw(self, surface):
-        if not self.alive:
-            return
-        pulse_r = int(self.size + 4 * math.sin(self.pulse))
-        # Glow ring
-        pygame.draw.circle(surface, (80, 20, 20), (self.x, self.y), pulse_r + 6)
-        # Main target
-        pygame.draw.circle(surface, TARGET_COLOR, (self.x, self.y), pulse_r)
-        # Inner ring
-        pygame.draw.circle(surface, TARGET_OUTLINE, (self.x, self.y), max(pulse_r - 8, 4), 2)
-        # Bullseye dot
-        pygame.draw.circle(surface, (255, 220, 220), (self.x, self.y), max(pulse_r // 4, 3))
+    def move(self):
+        """Move target if difficulty allows."""
+        if self.speed > 0:
+            self.x += self.dx
+            self.y += self.dy
 
-    def is_hit(self, mx, my):
-        dist = math.hypot(mx - self.x, my - self.y)
+            # Bounce off walls
+            if self.x <= self.size or self.x >= WINDOW_W - self.size:
+                self.dx *= -1
+            if self.y <= 80 or self.y >= WINDOW_H - self.size:
+                self.dy *= -1
+
+    def draw(self, screen):
+        """Draw target."""
+        pygame.draw.circle(screen, RED, (self.x, self.y), self.size)
+        pygame.draw.circle(screen, WHITE, (self.x, self.y), self.size - 8)
+        pygame.draw.circle(screen, RED, (self.x, self.y), self.size - 16)
+        pygame.draw.circle(screen, WHITE, (self.x, self.y), 5)
+
+    def is_clicked(self, mouse_x: int, mouse_y: int) -> bool:
+        """Check if target is clicked."""
+        dist = ((mouse_x - self.x) ** 2 + (mouse_y - self.y) ** 2) ** 0.5
         return dist <= self.size
 
+# ── Main Game Class ──────────────────────────────────────────────────────
+class AimTrainer:
+    """Main game class."""
 
-class AimTrainerGame:
-    """Main game class. Call run() to start."""
-
-    def __init__(self, session_id="session_001"):
+    def __init__(self):
         pygame.init()
-        self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
-        pygame.display.set_caption("🎯  AI Aim Trainer")
+
+        self.screen = pygame.display.set_mode((WINDOW_W, WINDOW_H))
+        pygame.display.set_caption("AI Adaptive Aim Trainer")
+
         self.clock = pygame.time.Clock()
-        self.font_large = pygame.font.SysFont(FONT_NAME, 28, bold=True)
-        self.font_med   = pygame.font.SysFont(FONT_NAME, 20)
-        self.font_small = pygame.font.SysFont(FONT_NAME, 15)
+        self.font_lg = pygame.font.SysFont("Arial", 28, bold=True)
+        self.font_sm = pygame.font.SysFont("Arial", 20)
 
-        self.collector = DataCollector(session_id)
-        self.reset()
+        # Game state
+        self.hits = 0
+        self.misses = 0
+        self.difficulty = 1
+        self.target = None
+        self.running = True
 
-    # ── State ──────────────────────────────────────────────────────────────────
-    def reset(self):
-        self.targets        = []
-        self.score          = 0
-        self.misses         = 0
-        self.total_shots    = 0
-        self.reaction_times = []
-        self.difficulty     = "Beginner"
-        self.last_spawn     = time.time()
-        self.game_over      = False
-        self.running        = True
-        self.flash_msg      = ""          # "HIT" / "MISS"
-        self.flash_timer    = 0
-        self.session_start  = time.time()
-        self.ai_skill_label = "Beginner"  # updated externally by model
+        # Adaptive difficulty timing
+        self.last_adjust_time = time.time()
+        self.adjust_interval = 60
 
-    # ── Difficulty ─────────────────────────────────────────────────────────────
-    def set_difficulty(self, label: str):
-        """Called externally by the ML model to update difficulty."""
-        if label in DIFFICULTY_CONFIG:
-            self.difficulty = label
-            self.ai_skill_label = label
+        # Data collector
+        self.collector = DataCollector()
 
-    def _cfg(self):
-        return DIFFICULTY_CONFIG[self.difficulty]
+        self._spawn_target()
 
-    # ── Spawning ───────────────────────────────────────────────────────────────
-    def _maybe_spawn(self):
-        now = time.time()
-        if now - self.last_spawn >= self._cfg()["interval"] and len(self.targets) < 3:
-            margin = 60
-            x = random.randint(margin, WIDTH - margin)
-            y = random.randint(margin + 60, HEIGHT - margin)
-            t = Target(x, y, self._cfg()["size"], self._cfg()["speed"])
-            self.targets.append(t)
-            self.last_spawn = now
+    # ── Core Helpers ─────────────────────────────────────────────────────
+    def _spawn_target(self):
+        self.target = Target(self.difficulty)
 
-    # ── Click handling ─────────────────────────────────────────────────────────
-    def _handle_click(self, mx, my):
-        self.total_shots += 1
-        hit_something = False
+    def _accuracy(self) -> float:
+        total = self.hits + self.misses
+        if total == 0:
+            return 100.0
+        return round((self.hits / total) * 100, 1)
 
-        for t in self.targets:
-            if t.alive and t.is_hit(mx, my):
-                reaction = time.time() - t.spawn_time
-                self.reaction_times.append(reaction)
-                self.score += 1
-                t.alive = False
-                hit_something = True
-                self.flash_msg   = "HIT"
-                self.flash_timer = 30
+    def _adjust_difficulty(self):
+        acc = self._accuracy()
 
-                # Save to CSV
-                self.collector.record(
-                    reaction_time   = round(reaction, 4),
-                    target_x        = t.x,
-                    target_y        = t.y,
-                    target_size     = t.size,
-                    hit             = 1,
-                    difficulty      = self.difficulty,
-                )
-                break
+        if acc > 80 and self.difficulty < 3:
+            self.difficulty += 1
+            print(f"[Difficulty] Increased to {self.difficulty} (accuracy={acc}%)")
+        elif acc < 60 and self.difficulty > 1:
+            self.difficulty -= 1
+            print(f"[Difficulty] Decreased to {self.difficulty} (accuracy={acc}%)")
+        else:
+            print(f"[Difficulty] Stays at {self.difficulty} (accuracy={acc}%)")
 
-        if not hit_something:
-            self.misses += 1
-            self.flash_msg   = "MISS"
-            self.flash_timer = 20
-            self.collector.record(
-                reaction_time = 0,
-                target_x      = mx,
-                target_y      = my,
-                target_size   = 0,
-                hit           = 0,
-                difficulty    = self.difficulty,
-            )
-
-        # Remove dead targets
-        self.targets = [t for t in self.targets if t.alive]
-
-    # ── HUD ────────────────────────────────────────────────────────────────────
+    # ── Drawing ──────────────────────────────────────────────────────────
     def _draw_hud(self):
-        # Top bar background
-        pygame.draw.rect(self.screen, HUD_BG, (0, 0, WIDTH, 55))
-        pygame.draw.line(self.screen, (50, 50, 80), (0, 55), (WIDTH, 55), 1)
+        pygame.draw.rect(self.screen, (30, 30, 40), (0, 0, WINDOW_W, 60))
+        pygame.draw.line(self.screen, GRAY, (0, 60), (WINDOW_W, 60), 1)
 
-        accuracy = (self.score / self.total_shots * 100) if self.total_shots > 0 else 0
-        avg_rt   = (sum(self.reaction_times) / len(self.reaction_times)) if self.reaction_times else 0
-        elapsed  = int(time.time() - self.session_start)
+        diff_labels = {1: "Beginner", 2: "Medium", 3: "Hard"}
+        diff_colors = {1: GREEN, 2: YELLOW, 3: ORANGE}
 
         stats = [
-            f"SCORE  {self.score}",
-            f"ACC  {accuracy:.1f}%",
-            f"AVG RT  {avg_rt:.3f}s",
-            f"DIFF  {self.difficulty}",
-            f"TIME  {elapsed}s",
-            f"AI  {self.ai_skill_label}",
+            (f"Hits: {self.hits}", GREEN, 20),
+            (f"Misses: {self.misses}", RED, 180),
+            (f"Accuracy: {self._accuracy()}%", WHITE, 340),
+            (f"Level: {diff_labels[self.difficulty]}", diff_colors[self.difficulty], 520),
         ]
-        x = 10
-        for s in stats:
-            surf = self.font_small.render(s, True, TEXT_COLOR)
+
+        for text, color, x in stats:
+            surf = self.font_sm.render(text, True, color)
             self.screen.blit(surf, (x, 18))
-            x += 130
 
-    def _draw_flash(self):
-        if self.flash_timer > 0:
-            color = HIT_COLOR if self.flash_msg == "HIT" else MISS_COLOR
-            surf = self.font_large.render(self.flash_msg, True, color)
-            self.screen.blit(surf, (WIDTH // 2 - surf.get_width() // 2, HEIGHT // 2 - 20))
-            self.flash_timer -= 1
+        # Timer
+        elapsed = time.time() - self.last_adjust_time
+        remaining = max(0, int(self.adjust_interval - elapsed))
 
-    def _draw_crosshair(self, mx, my):
-        size, gap = 10, 4
-        pygame.draw.line(self.screen, (200, 200, 220), (mx - size - gap, my), (mx - gap, my), 1)
-        pygame.draw.line(self.screen, (200, 200, 220), (mx + gap, my), (mx + size + gap, my), 1)
-        pygame.draw.line(self.screen, (200, 200, 220), (mx, my - size - gap), (mx, my - gap), 1)
-        pygame.draw.line(self.screen, (200, 200, 220), (mx, my + gap), (mx, my + size + gap), 1)
-        pygame.draw.circle(self.screen, (200, 200, 220), (mx, my), 2)
+        timer_surf = self.font_sm.render(f"Next adjust: {remaining}s", True, GRAY)
+        self.screen.blit(timer_surf, (WINDOW_W - 180, 18))
 
-    # ── Main loop ──────────────────────────────────────────────────────────────
+    # ── Main Loop ────────────────────────────────────────────────────────
     def run(self):
-        pygame.mouse.set_visible(False)  # hide default cursor
-
         while self.running:
-            self.clock.tick(FPS)
-            mx, my = pygame.mouse.get_pos()
+            self.clock.tick(60)
 
-            # ── Events ─────────────────────────────────────────────────────────
+            # Events
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        self.running = False
-                    if event.key == pygame.K_r:
-                        self.reset()
-                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    self._handle_click(mx, my)
 
-            # ── Logic ──────────────────────────────────────────────────────────
-            self._maybe_spawn()
-            for t in self.targets:
-                t.update()
+                elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    mx, my = pygame.mouse.get_pos()
 
-            # ── Draw ───────────────────────────────────────────────────────────
-            self.screen.fill(BG_COLOR)
+                    if my > 60:
+                        self._handle_click(mx, my)
 
-            # Subtle grid background
-            for gx in range(0, WIDTH, 40):
-                pygame.draw.line(self.screen, (22, 22, 35), (gx, 55), (gx, HEIGHT), 1)
-            for gy in range(60, HEIGHT, 40):
-                pygame.draw.line(self.screen, (22, 22, 35), (0, gy), (WIDTH, gy), 1)
+            # Difficulty update
+            if time.time() - self.last_adjust_time >= self.adjust_interval:
+                self._adjust_difficulty()
+                self.last_adjust_time = time.time()
 
-            for t in self.targets:
-                t.draw(self.screen)
+            # Update & Draw
+            self.target.move()
+            self.screen.fill(BLACK)
 
             self._draw_hud()
-            self._draw_flash()
-            self._draw_crosshair(mx, my)
+            self.target.draw(self.screen)
 
             pygame.display.flip()
 
-        pygame.mouse.set_visible(True)
-        self.collector.save()
         pygame.quit()
-        print(f"[Game] Session ended. Data saved. Score={self.score}")
+        sys.exit()
 
+    def _handle_click(self, mx: int, my: int):
+        reaction_time = round(time.time() - self.target.spawn_time, 4)
 
+        if self.target.is_clicked(mx, my):
+            self.hits += 1
+            hit = 1
+        else:
+            self.misses += 1
+            hit = 0
+
+        # Save data
+        self.collector.record(
+            reaction_time=reaction_time,
+            target_x=self.target.x,
+            target_y=self.target.y,
+            target_size=self.target.size,
+            hit=hit,
+            difficulty=self.difficulty,
+        )
+
+        self._spawn_target()
+
+# ── Entry Point ─────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    game = AimTrainerGame()
+    game = AimTrainer()
     game.run()
