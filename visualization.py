@@ -1,312 +1,163 @@
 """
-visualization.py — AI Analyst / Visualization Module
-Pattern recognition on player behavior + matplotlib graphs.
+visualization.py — AI Analyst Module (Part 2)
 
-Generates:
-  1. Reaction time trend (per click, rolling average)
-  2. Accuracy over time (per 10-event windows)
-  3. Reaction time heatmap (where on screen player is fast/slow)
-  4. Skill improvement detection (linear regression on RT)
-  5. Confusion matrix heatmap
+Role:
+- Create 3 matplotlib charts:
+  1. Reaction time over time
+  2. Accuracy over time
+  3. Clustering scatter plot
+
+Run:
+    python visualization.py
 """
 
-# Import numerical operations library
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 import numpy as np
 
-# Import data manipulation library
-import pandas as pd
+from data_collector import load_dataset
+from clustering import run_clustering
 
-# Import matplotlib base module
-import matplotlib
+# ── Colors ──────────────────────────────────────────────────────────────
+CLUSTER_COLORS = ["#e74c3c", "#3498db", "#2ecc71"]
 
-# Use non-GUI backend (important for saving plots without display)
-matplotlib.use("Agg")
+# ── Chart 1: Reaction Time ──────────────────────────────────────────────
+def plot_reaction_time(rows: list[dict], ax: plt.Axes):
+    if not rows:
+        ax.set_title("Reaction Time Over Time")
+        ax.text(0.5, 0.5, "No data", transform=ax.transAxes, ha="center")
+        return
 
-# Import plotting interface
-import matplotlib.pyplot as plt
+    times = list(range(1, len(rows) + 1))
+    rts = [r["reaction_time"] for r in rows]
 
-# Import color utilities
-import matplotlib.colors as mcolors
+    window = min(10, len(rts))
+    rolling = np.convolve(rts, np.ones(window) / window, mode="valid")
+    rolling_x = list(range(window, len(rts) + 1))
 
-# Handle file paths easily
-from pathlib import Path
+    ax.scatter(times, rts, color="#aaaacc", alpha=0.4, s=10, label="Raw")
+    ax.plot(rolling_x, rolling, color="#3498db", linewidth=2, label="Rolling avg")
 
+    ax.set_title("Reaction Time Over Time", fontsize=13, fontweight="bold")
+    ax.set_xlabel("Click #")
+    ax.set_ylabel("Seconds")
+    ax.legend(fontsize=9)
+    ax.grid(True, alpha=0.3)
 
-# Path to dataset CSV file
-CSV_PATH = Path(__file__).parent / "dataset.csv"
+# ── Chart 2: Accuracy ───────────────────────────────────────────────────
+def plot_accuracy(rows: list[dict], ax: plt.Axes):
+    if not rows:
+        ax.set_title("Accuracy Over Time")
+        ax.text(0.5, 0.5, "No data", transform=ax.transAxes, ha="center")
+        return
 
-# Folder to store generated plots
-PLOT_DIR = Path(__file__).parent / "plots"
+    hits = [r["hit"] for r in rows]
 
-# Create folder if it doesn't exist
-PLOT_DIR.mkdir(exist_ok=True)
+    window = min(15, len(hits))
+    rolling_acc = np.convolve(hits, np.ones(window) / window, mode="valid") * 100
+    rolling_x = list(range(window, len(hits) + 1))
 
+    ax.plot(rolling_x, rolling_acc, color="#2ecc71", linewidth=2)
 
-# ── Shared style ──────────────────────────────────────────────────────────────
+    ax.axhline(y=80, color="#e74c3c", linestyle="--", linewidth=1, label="80% target")
+    ax.axhline(y=60, color="#f39c12", linestyle="--", linewidth=1, label="60% floor")
 
-# Background color for figures
-BG    = "#0f0f19"
-
-# Panel (axes) background
-PANEL = "#15151f"
-
-# Colors for different plot lines
-LINE1 = "#e03c5a"
-LINE2 = "#50dc78"
-LINE3 = "#f5a623"
-
-# Text colors
-TEXT  = "#dde"
-DIM   = "#888"
-
-
-# Apply consistent styling to matplotlib axes
-def _style_ax(ax):
-    ax.set_facecolor(PANEL)  # Set background
-    ax.tick_params(colors=DIM)  # Axis ticks color
-    ax.xaxis.label.set_color(DIM)  # X label color
-    ax.yaxis.label.set_color(DIM)  # Y label color
-    ax.title.set_color(TEXT)  # Title color
-    
-    # Style borders
-    for spine in ax.spines.values():
-        spine.set_edgecolor("#333")
-
-
-# Save plot to file and close figure
-def _save(fig, name: str) -> str:
-    path = PLOT_DIR / name  # Full path
-
-    # Save figure with high quality
-    fig.savefig(path, dpi=120, facecolor=fig.get_facecolor(), bbox_inches="tight")
-
-    plt.close(fig)  # Free memory
-
-    print(f"[Visualization] Saved → {path}")  # Debug print
-    return str(path)  # Return file path
-
-
-# ── 1. Reaction Time Trend ────────────────────────────────────────────────────
-
-def plot_reaction_time_trend(session_id: str = None) -> str:
-    """
-    Line chart of reaction time per hit event,
-    with rolling average overlay.
-    """
-
-    # Load data (hits only)
-    df = _load(session_id, hits_only=True)
-
-    # Check if data is valid
-    if df is None or len(df) < 3:
-        return ""
-
-    # Extract reaction times
-    rt = df["reaction_time"].values
-
-    # X axis = event index
-    x  = np.arange(len(rt))
-
-    # Rolling window size (adaptive)
-    window = max(3, len(rt) // 8)
-
-    # Compute rolling average
-    roll   = pd.Series(rt).rolling(window, min_periods=1).mean().values
-
-    # Create plot
-    fig, ax = plt.subplots(figsize=(9, 4))
-    fig.patch.set_facecolor(BG)
-    _style_ax(ax)
-
-    # Plot raw reaction times
-    ax.plot(x, rt, alpha=0.35, color=LINE1, linewidth=1, label="Raw RT")
-
-    # Plot smoothed rolling average
-    ax.plot(x, roll, color=LINE2, linewidth=2.5, label=f"Rolling avg (w={window})")
-
-    # Fill area between raw and average
-    ax.fill_between(x, rt, roll, alpha=0.08, color=LINE1)
-
-    # Fit linear regression (degree 1 polynomial)
-    slope = np.polyfit(x, rt, 1)[0]
-
-    # Determine trend
-    trend_txt = "📉 Improving" if slope < -0.002 else ("📈 Declining" if slope > 0.002 else "➡ Stable")
-
-    # Titles and labels
-    ax.set_title(f"Reaction Time Trend  —  {trend_txt}", fontsize=13)
-    ax.set_xlabel("Hit #")
-    ax.set_ylabel("Reaction Time (s)")
-
-    ax.legend(facecolor="#222", labelcolor=TEXT, edgecolor="#444")
-
-    return _save(fig, "reaction_time_trend.png")
-
-
-# ── 2. Accuracy Over Time ─────────────────────────────────────────────────────
-
-def plot_accuracy_over_time(session_id: str = None, window: int = 10) -> str:
-    """
-    Rolling accuracy (hits / total shots) over a sliding window.
-    """
-
-    # Load all data (hits + misses)
-    df = _load(session_id, hits_only=False)
-
-    if df is None or len(df) < window:
-        return ""
-
-    # Compute rolling accuracy (%)
-    acc = df["hit"].rolling(window, min_periods=1).mean().values * 100
-
-    x   = np.arange(len(acc))
-
-    fig, ax = plt.subplots(figsize=(9, 4))
-    fig.patch.set_facecolor(BG)
-    _style_ax(ax)
-
-    # Plot accuracy
-    ax.plot(x, acc, color=LINE3, linewidth=2.5)
-
-    # Fill under curve
-    ax.fill_between(x, acc, alpha=0.15, color=LINE3)
-
-    # Add reference thresholds
-    ax.axhline(y=80, color=LINE2, linestyle="--", linewidth=1, alpha=0.6, label="Pro threshold (80%)")
-    ax.axhline(y=60, color=LINE1, linestyle="--", linewidth=1, alpha=0.6, label="Average threshold (60%)")
-
-    ax.set_ylim(0, 105)
-
-    ax.set_title("Accuracy Over Time", fontsize=13)
-    ax.set_xlabel("Shot #")
+    ax.set_title("Accuracy Over Time", fontsize=13, fontweight="bold")
+    ax.set_xlabel("Click #")
     ax.set_ylabel("Accuracy (%)")
+    ax.set_ylim(0, 105)
+    ax.legend(fontsize=9)
+    ax.grid(True, alpha=0.3)
 
-    ax.legend(facecolor="#222", labelcolor=TEXT, edgecolor="#444")
+# ── Chart 3: Clustering ─────────────────────────────────────────────────
+def plot_clusters(rows: list[dict], ax: plt.Axes):
+    result = run_clustering(rows)
 
-    return _save(fig, "accuracy_over_time.png")
+    if not result:
+        ax.set_title("Player Behavior Clusters")
+        ax.text(0.5, 0.5, "Not enough data", transform=ax.transAxes, ha="center")
+        return
 
+    features = result["features"]
+    labels = result["labels"]
+    centers = result["centers"]
 
-# ── 3. Reaction Time Heatmap ──────────────────────────────────────────────────
+    cluster_names = ["Struggling", "Improving", "Skilled"]
 
-def plot_reaction_heatmap(session_id: str = None) -> str:
-    """
-    2D heatmap: average reaction time per screen region.
-    """
+    for cluster_id in range(3):
+        mask = labels == cluster_id
 
-    df = _load(session_id, hits_only=True)
+        ax.scatter(
+            features[mask, 0],
+            features[mask, 1],
+            c=CLUSTER_COLORS[cluster_id],
+            label=cluster_names[cluster_id],
+            alpha=0.6,
+            s=25,
+        )
 
-    if df is None or len(df) < 5:
-        return ""
+    # Centers
+    ax.scatter(
+        centers[:, 0],
+        centers[:, 1],
+        c="black",
+        marker="X",
+        s=120,
+        zorder=5,
+        label="Centers"
+    )
 
-    # Define grid resolution
-    bins_x, bins_y = 10, 8
+    ax.set_title("Player Behavior Clusters", fontsize=13, fontweight="bold")
+    ax.set_xlabel("Reaction Time (s)")
+    ax.set_ylabel("Hit (0=Miss, 1=Hit)")
+    ax.legend(fontsize=9)
+    ax.grid(True, alpha=0.3)
 
-    # Remove invalid positions
-    df = df[(df["target_x"] > 0) & (df["target_y"] > 0)]
+# ── Generate All Charts ─────────────────────────────────────────────────
+def generate_charts(rows: list[dict], show: bool = True):
+    fig = plt.figure(figsize=(16, 5))
+    fig.patch.set_facecolor("#1a1a2e")
 
-    df = df.copy()
+    gs = gridspec.GridSpec(1, 3, figure=fig, wspace=0.35)
 
-    # Assign each point to a bin
-    df["bx"] = pd.cut(df["target_x"], bins=bins_x, labels=False)
-    df["by"] = pd.cut(df["target_y"], bins=bins_y, labels=False)
+    ax1 = fig.add_subplot(gs[0])
+    ax2 = fig.add_subplot(gs[1])
+    ax3 = fig.add_subplot(gs[2])
 
-    # Compute mean reaction time per grid cell
-    grid = df.groupby(["by", "bx"])["reaction_time"].mean().unstack(fill_value=np.nan)
+    # Dark styling
+    for ax in [ax1, ax2, ax3]:
+        ax.set_facecolor("#16213e")
+        ax.tick_params(colors="white")
+        ax.xaxis.label.set_color("white")
+        ax.yaxis.label.set_color("white")
+        ax.title.set_color("white")
 
-    # Fill missing values with column means
-    grid = grid.T.fillna(grid.T.mean()).T
+        for spine in ax.spines.values():
+            spine.set_edgecolor("#444466")
 
-    fig, ax = plt.subplots(figsize=(8, 5))
-    fig.patch.set_facecolor(BG)
-    _style_ax(ax)
+    plot_reaction_time(rows, ax1)
+    plot_accuracy(rows, ax2)
+    plot_clusters(rows, ax3)
 
-    # Color map (red = slow, green = fast)
-    cmap = plt.get_cmap("RdYlGn_r")
+    fig.suptitle(
+        "AI Aim Trainer — Analytics Dashboard",
+        fontsize=15,
+        fontweight="bold",
+        color="white",
+        y=1.02
+    )
 
-    # Draw heatmap
-    im   = ax.imshow(grid.values, cmap=cmap, aspect="auto", interpolation="bilinear")
+    if show:
+        plt.tight_layout()
+        plt.show()
 
-    # Add color bar
-    cbar = fig.colorbar(im, ax=ax)
-    cbar.ax.yaxis.set_tick_params(color=DIM)
-    cbar.set_label("Avg Reaction Time (s)", color=DIM)
+    return fig
 
-    ax.set_title("Reaction Time Heatmap (screen regions)", fontsize=13)
-    ax.set_xlabel("Screen X zone")
-    ax.set_ylabel("Screen Y zone")
+# ── Entry Point ─────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    rows = load_dataset()
 
-    return _save(fig, "reaction_heatmap.png")
-
-
-# ── 4. Skill Improvement Detection ───────────────────────────────────────────
-
-def plot_improvement(session_id: str = None) -> str:
-    """
-    Detect improvement using polynomial trend.
-    """
-
-    df = _load(session_id, hits_only=True)
-
-    if df is None or len(df) < 5:
-        return ""
-
-    rt = df["reaction_time"].values
-    x  = np.arange(len(rt))
-
-    # Fit quadratic curve
-    poly = np.polyfit(x, rt, 2)
-
-    # Generate smooth curve
-    trend_y = np.polyval(poly, x)
-
-    fig, ax = plt.subplots(figsize=(9, 4))
-    fig.patch.set_facecolor(BG)
-    _style_ax(ax)
-
-    ax.scatter(x, rt, color=LINE1, alpha=0.5, s=20, label="Reaction times")
-    ax.plot(x, trend_y, color=LINE3, linewidth=2.5, label="Trend")
-
-    # Compare start vs end performance
-    slope_start = trend_y[0]
-    slope_end   = trend_y[-1]
-
-    if slope_end < slope_start * 0.95:
-        note = "✅  Player is improving!"
-    elif slope_end > slope_start * 1.05:
-        note = "⚠️  Performance declining"
+    if rows:
+        generate_charts(rows, show=True)
     else:
-        note = "🔄  Performance is stable"
-
-    ax.set_title(f"Performance Trend  —  {note}", fontsize=13)
-    ax.set_xlabel("Hit #")
-    ax.set_ylabel("Reaction Time (s)")
-
-    ax.legend(facecolor="#222", labelcolor=TEXT, edgecolor="#444")
-
-    return _save(fig, "improvement_trend.png")
-
-
-# ── Utility Function ──────────────────────────────────────────────────────────
-
-def _load(session_id, hits_only: bool) -> pd.DataFrame | None:
-    # Check if dataset exists
-    if not CSV_PATH.exists():
-        print("[Visualization] dataset.csv not found.")
-        return None
-
-    # Load dataset
-    df = pd.read_csv(CSV_PATH)
-
-    # Filter by session if provided
-    if session_id:
-        df = df[df["session_id"] == session_id]
-
-    # Filter only hits if needed
-    if hits_only:
-        df = df[df["hit"] == 1]
-
-    # Return None if empty
-    if len(df) == 0:
-        return None
-
-    return df.reset_index(drop=True)
+        print("[Visualization] No data found. Play the game first!")
