@@ -3,197 +3,206 @@
 **University AI Engineering Project**  
 *Machine Learning · Pattern Recognition · Real-Time Dashboard*
 
+
+## 👥 Team
+
+| Role | Responsibility |
+|---|---|
+| 🎮 Game Developer | `game.py` — Pygame game loop, adaptive difficulty |
+| 📊 Data Engineer | `data_collector.py` — CSV collection and loading |
+| 🤖 ML Engineer | `model.py` — Random Forest classifier, skill prediction |
+| 📈 AI Analyst | `clustering.py` + `visualization.py` — KMeans, charts |
+
 ---
 
 ## 📁 Project Structure
 
 ```
 /project
-  ├── game.py            → Pygame aim trainer game (Game Developer)
-  ├── data_collector.py  → Real-time CSV data collection (Data Engineer)
-  ├── model.py           → Supervised ML classification (ML Engineer)
-  ├── clustering.py      → K-Means unsupervised learning (AI Analyst)
-  ├── visualization.py   → Pattern recognition & graphs (AI Analyst)
-  ├── dashboard.py       → Streamlit real-time dashboard (AI Analyst)
-  ├── main.py            → Orchestrator / entry point
-  ├── dataset.csv        → Auto-generated gameplay data
-  ├── plots/             → Auto-generated PNG charts
-  └── README.md          → This file
+├── game.py             ← Aim trainer game (Pygame)
+├── data_collector.py   ← Saves gameplay data to CSV
+├── model.py            ← Trains & loads the ML model
+├── clustering.py       ← KMeans clustering + pattern analysis
+├── visualization.py    ← 3 matplotlib charts
+├── dashboard.py        ← Streamlit analytics dashboard
+├── main.py             ← CLI menu launcher
+├── reset.py            ← Reset all data and models
+├── dataset.csv         ← Auto-generated during gameplay
+├── model.pkl           ← Auto-generated after training
+├── requirements.txt    ← Python dependencies
+└── report.html         ← Full project report (open in browser)
 ```
 
 ---
 
-## ⚙️ Installation
+## ⚙️ Requirements
+
+- Python **3.10** or higher
+- pip
+
+Install all dependencies with:
 
 ```bash
-pip install pygame scikit-learn pandas numpy matplotlib streamlit joblib
+pip install -r requirements.txt
 ```
 
-## 🚀 How to Run
+---
 
-### Option 1 — Full Game + AI Pipeline
+## 🚀 How to Run — Step by Step
+
+### Step 1 — Play the game
+
 ```bash
-python -m main.py
+python game.py
 ```
-Starts the game. After you quit (ESC), it trains the ML model, runs clustering, and generates plots.
 
-### Option 2 — Demo Mode (no Pygame needed, great for testing)
+- Click on the red targets as fast and accurately as you can
+- Data is automatically saved to `dataset.csv` after every click
+- Difficulty adjusts every **60 seconds** based on your accuracy:
+  - Accuracy > 80% → difficulty increases
+  - Accuracy < 60% → difficulty decreases
+
+### Step 2 — Train the ML model
+
+> ⚠️ Do this **after** playing, not during. Training is offline only.
+
 ```bash
-python -m main.py --demo
+python model.py
 ```
-Generates 6 synthetic sessions of realistic gameplay data, then runs the full AI pipeline.
 
-### Option 3 — Launch the Dashboard
+- Reads `dataset.csv`
+- Trains a Random Forest classifier
+- Saves the model to `model.pkl`
+- Prints a classification report in the terminal
+
+### Step 3 — Open the dashboard
+
 ```bash
 python -m streamlit run dashboard.py
 ```
-Opens in your browser at `http://localhost:8501`
 
-### Option 4 — Train model only
+- Opens in your browser at `http://localhost:8501`
+- Shows: total hits/misses, accuracy, avg reaction time, skill prediction, pattern trends, and all 3 charts
+- Use the **Refresh** button or enable **Auto-refresh** in the sidebar
+
+### Step 4 — (Optional) View charts only
+
 ```bash
-python -m main.py --train
+python visualization.py
 ```
 
-### Option 5 — Generate plots only
+### Step 5 — (Optional) View clustering analysis in terminal
+
 ```bash
-python -m main.py --viz
+python clustering.py
 ```
+
+---
+
+## 🖥️ Alternative: Use the Main Menu
+
+```bash
+python main.py
+```
+
+Launches an interactive CLI menu with options to run every component.
+
+---
+
+## 🔄 Reset Everything
+
+To wipe all data and start fresh:
+
+```bash
+python reset.py
+```
+
+This deletes `dataset.csv` and `model.pkl`. See [reset.py](#) for details.
 
 ---
 
 ## 🎮 Game Controls
 
-| Key / Action | Effect |
+| Action | Control |
 |---|---|
-| Left click | Shoot a target |
-| ESC | Quit game |
-| R | Reset session |
-
-**Difficulty levels** are applied automatically by the AI based on your skill:
-- **Beginner** → Large (r=50px), slow targets, 2s interval
-- **Average**  → Medium (r=32px), 1.2s interval
-- **Pro**      → Small (r=18px), fast, 0.7s interval
+| Click a target | Left mouse button |
+| Quit the game | Close the window or press `Ctrl+C` in terminal |
 
 ---
 
-## 🧠 AI Architecture
+## 🧠 How the ML Works
 
-### 1. Supervised Learning (model.py)
+### Supervised Learning — Skill Classification (`model.py`)
 
-**Goal:** Classify player as Beginner / Average / Pro
+- **Algorithm:** Random Forest (50 decision trees)
+- **Input features:** avg reaction time, accuracy, avg difficulty level
+- **Output:** `Beginner` / `Average` / `Pro`
+- **Labels** are generated automatically using a rule-based system on windows of 20 clicks
 
-**Features per session:**
-| Feature | Description |
-|---|---|
-| avg_reaction | Mean reaction time on hits |
-| std_reaction | Variability of reaction times |
-| accuracy | Hits / total shots |
-| total_shots | Volume of play |
-| avg_target_size | Difficulty of targets hit |
+### Unsupervised Learning — Behavior Clustering (`clustering.py`)
 
-**Models trained:**
-- K-Nearest Neighbors (k=5)
-- Decision Tree (max_depth=5)
-- Random Forest (100 estimators)
-
-**Selection:** Best model chosen by 5-fold cross-validation.
+- **Algorithm:** KMeans with 3 clusters
+- **Features:** reaction time + hit/miss per click
+- **Clusters:** Struggling / Improving / Skilled
+- No labels needed — patterns emerge from the data
 
 ---
 
-### 2. Unsupervised Learning (clustering.py)
+## 📊 The 3 Charts (`visualization.py`)
 
-**Goal:** Discover behavioral groups without labels
-
-**Algorithm:** K-Means (k=3)
-- Elbow method used to validate k
-- Silhouette score measures cluster quality
-- PCA reduces features to 2D for visualization
-- Clusters auto-labeled by reaction time centroids
+1. **Reaction Time Over Time** — raw data + rolling average
+2. **Accuracy Over Time** — rolling hit rate with 80% / 60% reference lines
+3. **Clustering Scatter Plot** — colored by KMeans cluster assignment
 
 ---
 
-### 3. Pattern Recognition (visualization.py)
+## 📈 Adaptive Difficulty System
 
-| Plot | What it detects |
-|---|---|
-| Reaction Time Trend | Rolling average; improvement/decline slope |
-| Accuracy Over Time | Rolling hit rate; performance stability |
-| Reaction Heatmap | Screen zones where player is fast vs slow |
-| Improvement Trend | Polynomial regression on RT — improving? |
-| Difficulty Distribution | Shot volume per difficulty level |
+Every 60 seconds the game checks your accuracy and adjusts:
 
----
-
-### 4. Adaptive Difficulty (main.py + game.py)
-
-Every 5 seconds during gameplay, a background thread:
-1. Computes current session stats
-2. Calls `SkillClassifier.predict()`
-3. Updates `game.set_difficulty(label)`
-
-The game immediately adjusts target size and spawn speed.
-
----
-
-## 📊 System Flow
-
-```
-Player plays game
-      ↓
-game.py  ──► data_collector.py  ──► dataset.csv
-                                        ↓
-                              model.py (KNN / DT / RF)
-                                        ↓
-                            Skill: Beginner / Average / Pro
-                                        ↓
-                              clustering.py (K-Means)
-                                        ↓
-                              visualization.py (graphs)
-                                        ↓
-                              dashboard.py (Streamlit)
-                                        ↓
-                         game.py ← adaptive difficulty update
-```
-
----
-
-## 📈 Dashboard Features
-
-- **Player Stats** — Hits, accuracy, average/best reaction time
-- **ML Prediction** — Live skill label with probability bars
-- **Cluster Analysis** — K-Means cluster assignment + summary table
-- **4 Performance Graphs** — Reaction trend, accuracy, improvement, difficulty
-- **Cluster Scatter** — PCA 2D visualization of all sessions
-- **Elbow Chart** — Optimal k validation
-- **Raw Data Table** — Browse CSV directly in browser
-- **Auto-refresh toggle** — Live updates every 3 seconds
-
----
-
-## 🔬 Supervised vs Unsupervised Learning
-
-### Supervised Learning
-- **Requires labeled data** — we define what "Pro", "Average", "Beginner" means via threshold rules
-- **Learns a mapping** from features → label
-- **Used for:** real-time prediction during gameplay
-- **Real-world analogy:** spam email detection (labeled spam/not-spam)
-
-### Unsupervised Learning
-- **No labels needed** — algorithm finds natural groupings in raw data
-- **K-Means** partitions sessions into k groups by minimizing intra-cluster distance
-- **Used for:** discovering player archetypes researchers didn't pre-define
-- **Real-world analogy:** customer segmentation in marketing
-
-### When both are used together:
-Unsupervised clustering can **validate** or **refine** supervised labels. If our rule-based "Pro" boundary is wrong, K-Means clusters might reveal a different natural boundary.
-
----
-
-## 👥 Team Roles
-
-| Member | Module | Responsibility |
+| Condition | Action | Effect |
 |---|---|---|
-| Game Developer | game.py | Pygame engine, targets, scoring, difficulty scaling |
-| Data Engineer | data_collector.py | Real-time CSV collection, feature schema |
-| ML Engineer | model.py | KNN, Decision Tree, Random Forest, evaluation |
-| AI Analyst | clustering.py, visualization.py, dashboard.py | K-Means, pattern recognition, Streamlit dashboard |
+| Accuracy > 80% | Increase difficulty | Smaller targets, faster movement |
+| Accuracy < 60% | Decrease difficulty | Larger targets, no movement |
+| 60%–80% | No change | Stay at current level |
+
+Difficulty levels:
+
+| Level | Target Size | Target Speed |
+|---|---|---|
+| 1 — Beginner | 45 px | Stationary |
+| 2 — Medium | 35 px | Slow movement |
+| 3 — Hard | 25 px | Faster movement |
+
+---
+
+## 🗂️ Dataset Columns
+
+| Column | Type | Description |
+|---|---|---|
+| `reaction_time` | float | Seconds from target spawn to click |
+| `target_x` | int | Target X position (pixels) |
+| `target_y` | int | Target Y position (pixels) |
+| `target_size` | int | Target radius (pixels) |
+| `hit` | 0 / 1 | 1 = hit, 0 = miss |
+| `timestamp` | float | Unix timestamp of click |
+| `difficulty_level` | 1/2/3 | Difficulty at time of click |
+
+---
+
+## 🛠️ Troubleshooting
+
+**Pygame window doesn't open**
+→ Make sure `pygame` is installed: `pip install pygame`
+
+**"Not enough data to train"**
+→ Play the game for at least 2–3 minutes before running `model.py`
+
+**Dashboard shows empty charts**
+→ Play the game first so `dataset.csv` has data
+
+**`model.pkl` not found warning**
+→ Run `python model.py` to train and save the model
+
+---
+
