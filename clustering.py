@@ -1,253 +1,131 @@
 """
-clustering.py — AI Analyst / Unsupervised Learning Module
-K-Means clustering to discover player behavioral patterns without labels.
+clustering.py — AI Analyst Module (Part 1)
 
-Steps:
-  1. Load dataset.csv and engineer per-session features
-  2. Apply K-Means (k=3 clusters ≈ Beginner / Average / Pro)
-  3. Use Elbow Method to find optimal k
-  4. Visualise cluster separation via PCA
-  5. Return cluster assignments and centroids for the dashboard
+Role:
+- Use KMeans clustering to group player behavior patterns
+- Detect performance trends over time
+
+Run directly:
+    python clustering.py
 """
 
 import numpy as np
-import pandas as pd
-import matplotlib
-matplotlib.use("Agg")   # headless backend — safe when Pygame is also running
-import matplotlib.pyplot as plt
-import matplotlib.cm as cm
-from pathlib import Path
 from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
-from sklearn.metrics import silhouette_score
-import warnings
-warnings.filterwarnings("ignore")
+from data_collector import load_dataset
 
-CSV_PATH = Path(__file__).parent / "dataset.csv"
-PLOT_DIR = Path(__file__).parent / "plots"
-PLOT_DIR.mkdir(exist_ok=True)
+# ── Config ───────────────────────────────────────────────────────────────
+N_CLUSTERS = 3
 
-FEATURE_COLS = [
-    "avg_reaction", "std_reaction", "accuracy",
-    "total_shots", "avg_target_size"
-]
+CLUSTER_LABELS = {
+    0: "Struggling",
+    1: "Improving",
+    2: "Skilled"
+}
 
-# Human-readable cluster labels assigned after fitting
-CLUSTER_NAMES = {0: "Beginner", 1: "Average", 2: "Pro"}
+# ── Feature Preparation ──────────────────────────────────────────────────
+def prepare_cluster_features(rows: list[dict]) -> tuple:
+    """
+    Convert raw rows into feature matrix:
+    [reaction_time, hit]
+    """
 
+    features = []
+    timestamps = []
 
-# ── Feature Engineering (mirrors model.py) ────────────────────────────────────
-def _build_session_features(df: pd.DataFrame) -> pd.DataFrame:
-    agg = df.groupby("session_id").agg(
-        total_shots     = ("hit", "count"),
-        total_hits      = ("hit", "sum"),
-        avg_reaction    = ("reaction_time", lambda x: x[x > 0].mean()),
-        std_reaction    = ("reaction_time", lambda x: x[x > 0].std()),
-        avg_target_size = ("target_size",   lambda x: x[x > 0].mean()),
-    ).reset_index()
-    agg["accuracy"] = agg["total_hits"] / agg["total_shots"].replace(0, np.nan)
-    agg = agg.fillna(0)
-    return agg
+    for r in rows:
+        features.append([r["reaction_time"], float(r["hit"])])
+        timestamps.append(r["timestamp"])
 
+    return np.array(features), timestamps
 
-# ── Main Clustering Class ──────────────────────────────────────────────────────
-class PlayerClustering:
+# ── KMeans Clustering ────────────────────────────────────────────────────
+def run_clustering(rows: list[dict]) -> dict:
+    """
+    Run clustering and return results
+    """
 
-    def __init__(self, n_clusters: int = 3):
-        self.n_clusters = n_clusters
-        self.scaler     = StandardScaler()
-        self.kmeans     = None
-        self.feat_df    = None
-        self.X_scaled   = None
-        self.labels_    = None
+    if len(rows) < N_CLUSTERS:
+        print(f"[Clustering] Need at least {N_CLUSTERS} data points.")
+        return {}
 
-    # ── Fit ────────────────────────────────────────────────────────────────────
-    def fit(self) -> bool:
-        """
-        Load data, build features, and fit K-Means.
-        Returns True if successful, False otherwise.
-        """
-        if not CSV_PATH.exists():
-            print("[Clustering] No dataset found.")
-            return False
+    features, timestamps = prepare_cluster_features(rows)
 
-        df = pd.read_csv(CSV_PATH)
-        if len(df) < 6:
-            print("[Clustering] Not enough data for clustering (need ≥6 rows).")
-            return False
+    # Normalize features
+    mean = features.mean(axis=0)
+    std = features.std(axis=0) + 1e-8
+    features_norm = (features - mean) / std
 
-        self.feat_df = _build_session_features(df)
-        if len(self.feat_df) < self.n_clusters:
-            print(f"[Clustering] Need at least {self.n_clusters} sessions.")
-            return False
+    # Train KMeans
+    kmeans = KMeans(n_clusters=N_CLUSTERS, random_state=42, n_init=10)
+    labels = kmeans.fit_predict(features_norm)
 
-        # Use only features present in data
-        available = [c for c in FEATURE_COLS if c in self.feat_df.columns]
-        X = self.feat_df[available].values
-        self.X_scaled = self.scaler.fit_transform(X)
+    # Convert centers back to original scale
+    centers = kmeans.cluster_centers_ * std + mean
 
-        self.kmeans  = KMeans(n_clusters=self.n_clusters, random_state=42, n_init=10)
-        self.labels_ = self.kmeans.fit_predict(self.X_scaled)
-        self.feat_df["cluster"] = self.labels_
+    print(f"[Clustering] Clustered {len(rows)} points into {N_CLUSTERS} groups.")
 
-        # Map cluster indices to skill names based on centroid avg_reaction
-        self._assign_cluster_names()
+    for i in range(N_CLUSTERS):
+        count = np.sum(labels == i)
+        cx = round(centers[i][0], 3)
+        cy = round(centers[i][1], 3)
 
-        sil = silhouette_score(self.X_scaled, self.labels_) if len(set(self.labels_)) > 1 else 0
-        print(f"[Clustering] Fitted K-Means (k={self.n_clusters})  Silhouette={sil:.3f}")
-        return True
+        print(f"  Cluster {i}: {count} points | avg RT={cx}s, avg hit={cy:.2f}")
 
-    def _assign_cluster_names(self):
-        """
-        Sort clusters by centroid avg_reaction: lowest RT → Pro,
-        middle → Average, highest → Beginner.
-        """
-        rt_idx = FEATURE_COLS.index("avg_reaction") if "avg_reaction" in FEATURE_COLS else 0
-        centroids = self.kmeans.cluster_centers_
-        order = np.argsort(centroids[:, rt_idx])  # ascending RT
-        name_map = {order[0]: "Pro", order[1]: "Average", order[2]: "Beginner"}
-        if self.n_clusters == 2:
-            name_map = {order[0]: "Pro", order[1]: "Beginner"}
-        self.feat_df["cluster_name"] = self.feat_df["cluster"].map(name_map)
+    return {
+        "features": features,
+        "labels": labels,
+        "centers": centers,
+        "timestamps": timestamps,
+    }
 
-    # ── Elbow Method ───────────────────────────────────────────────────────────
-    def elbow_analysis(self, max_k: int = 8) -> dict:
-        """Compute inertia for k=2..max_k and plot the elbow curve."""
-        if self.X_scaled is None:
-            self.fit()
-        if self.X_scaled is None:
-            return {}
+# ── Pattern Recognition ──────────────────────────────────────────────────
+def analyze_patterns(rows: list[dict]) -> dict:
+    """
+    Compare early vs late performance
+    """
 
-        ks      = range(2, min(max_k + 1, len(self.X_scaled)))
-        inertias = []
-        sils     = []
+    if len(rows) < 10:
+        return {"trend": "Not enough data for pattern analysis."}
 
-        for k in ks:
-            km = KMeans(n_clusters=k, random_state=42, n_init=10)
-            km.fit(self.X_scaled)
-            inertias.append(km.inertia_)
-            if k < len(self.X_scaled):
-                sils.append(silhouette_score(self.X_scaled, km.labels_))
-            else:
-                sils.append(0)
+    mid = len(rows) // 2
+    early = rows[:mid]
+    late = rows[mid:]
 
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
-        fig.patch.set_facecolor("#0f0f19")
-        for ax in (ax1, ax2):
-            ax.set_facecolor("#15151f")
-            ax.tick_params(colors="#aaa")
-            for spine in ax.spines.values():
-                spine.set_edgecolor("#333")
+    early_rt = np.mean([r["reaction_time"] for r in early])
+    late_rt = np.mean([r["reaction_time"] for r in late])
 
-        ax1.plot(list(ks), inertias, "o-", color="#e03c5a", linewidth=2, markersize=7)
-        ax1.set_title("Elbow Method — Inertia", color="#dde", fontsize=13)
-        ax1.set_xlabel("k (clusters)", color="#aaa")
-        ax1.set_ylabel("Inertia", color="#aaa")
+    early_acc = np.mean([r["hit"] for r in early])
+    late_acc = np.mean([r["hit"] for r in late])
 
-        ax2.plot(list(ks), sils, "o-", color="#50dc78", linewidth=2, markersize=7)
-        ax2.set_title("Silhouette Score vs k", color="#dde", fontsize=13)
-        ax2.set_xlabel("k (clusters)", color="#aaa")
-        ax2.set_ylabel("Silhouette Score", color="#aaa")
+    rt_change = round(late_rt - early_rt, 4)
+    acc_change = round(late_acc - early_acc, 4)
 
-        plt.tight_layout()
-        path = PLOT_DIR / "elbow.png"
-        plt.savefig(path, dpi=120, facecolor=fig.get_facecolor())
-        plt.close()
-        print(f"[Clustering] Elbow plot saved → {path}")
-        return {"ks": list(ks), "inertias": inertias, "silhouettes": sils}
+    rt_trend = "faster ✓" if rt_change < 0 else "slower ✗"
+    acc_trend = "better ✓" if acc_change > 0 else "worse ✗"
 
-    # ── PCA Scatter ────────────────────────────────────────────────────────────
-    def plot_clusters(self) -> str:
-        """
-        Reduce to 2D with PCA and plot cluster scatter.
-        Returns path to saved PNG.
-        """
-        if self.X_scaled is None or self.labels_ is None:
-            if not self.fit():
-                return ""
+    patterns = {
+        "early_avg_rt": round(early_rt, 3),
+        "late_avg_rt": round(late_rt, 3),
+        "rt_change": rt_change,
+        "rt_trend": rt_trend,
+        "early_accuracy": round(early_acc * 100, 1),
+        "late_accuracy": round(late_acc * 100, 1),
+        "acc_change": round(acc_change * 100, 1),
+        "acc_trend": acc_trend,
+    }
 
-        pca = PCA(n_components=2, random_state=42)
-        coords = pca.fit_transform(self.X_scaled)
-        var = pca.explained_variance_ratio_
+    print("\n[Pattern Recognition]")
+    print(f"  Reaction time : {patterns['early_avg_rt']}s → {patterns['late_avg_rt']}s ({rt_trend})")
+    print(f"  Accuracy      : {patterns['early_accuracy']}% → {patterns['late_accuracy']}% ({acc_trend})")
 
-        PALETTE = {"Pro": "#e03c5a", "Average": "#f5a623", "Beginner": "#50dc78"}
-        DEFAULT = "#7777cc"
+    return patterns
 
-        fig, ax = plt.subplots(figsize=(8, 6))
-        fig.patch.set_facecolor("#0f0f19")
-        ax.set_facecolor("#15151f")
-        ax.tick_params(colors="#aaa")
-        for spine in ax.spines.values():
-            spine.set_edgecolor("#333")
-
-        for name in ["Beginner", "Average", "Pro"]:
-            mask = self.feat_df.get("cluster_name", pd.Series()) == name
-            if mask.any():
-                ax.scatter(
-                    coords[mask, 0], coords[mask, 1],
-                    c=PALETTE.get(name, DEFAULT),
-                    label=name, s=90, alpha=0.85, edgecolors="white", linewidths=0.5
-                )
-
-        # Centroids in PCA space
-        centers_pca = pca.transform(self.kmeans.cluster_centers_)
-        ax.scatter(centers_pca[:, 0], centers_pca[:, 1],
-                   c="white", marker="X", s=200, zorder=5, label="Centroid")
-
-        ax.set_title("Player Clusters (PCA)", color="#dde", fontsize=14)
-        ax.set_xlabel(f"PC1 ({var[0]*100:.1f}% var)", color="#aaa")
-        ax.set_ylabel(f"PC2 ({var[1]*100:.1f}% var)", color="#aaa")
-        legend = ax.legend(facecolor="#222", labelcolor="#dde", edgecolor="#444")
-        plt.tight_layout()
-
-        path = PLOT_DIR / "clusters.png"
-        plt.savefig(path, dpi=120, facecolor=fig.get_facecolor())
-        plt.close()
-        print(f"[Clustering] Cluster plot saved → {path}")
-        return str(path)
-
-    # ── Stats per cluster ──────────────────────────────────────────────────────
-    def cluster_summary(self) -> pd.DataFrame:
-        """Return a DataFrame with mean stats per cluster."""
-        if self.feat_df is None:
-            self.fit()
-        if self.feat_df is None:
-            return pd.DataFrame()
-
-        cols = [c for c in FEATURE_COLS if c in self.feat_df.columns] + ["cluster_name"]
-        summary = (
-            self.feat_df[cols]
-            .groupby("cluster_name")
-            .mean()
-            .round(3)
-        )
-        return summary
-
-    # ── Predict cluster for live session ──────────────────────────────────────
-    def predict_cluster(self, session_stats: dict) -> str:
-        """Assign a new session to the nearest cluster."""
-        if self.kmeans is None:
-            if not self.fit():
-                return "Unknown"
-        available = [c for c in FEATURE_COLS if c in session_stats]
-        X = np.array([[session_stats.get(c, 0) for c in available]])
-        X_s = self.scaler.transform(X)
-        idx = self.kmeans.predict(X_s)[0]
-        # Map index to name
-        rt_idx = FEATURE_COLS.index("avg_reaction") if "avg_reaction" in FEATURE_COLS else 0
-        order  = np.argsort(self.kmeans.cluster_centers_[:, rt_idx])
-        names  = {order[0]: "Pro", order[1]: "Average", order[2]: "Beginner"}
-        return names.get(idx, "Unknown")
-
-
-# ── Quick test ─────────────────────────────────────────────────────────────────
+# ── Entry Point ─────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    pc = PlayerClustering()
-    ok = pc.fit()
-    if ok:
-        print(pc.cluster_summary())
-        pc.plot_clusters()
-        pc.elbow_analysis()
+    rows = load_dataset()
+
+    if rows:
+        run_clustering(rows)
+        analyze_patterns(rows)
     else:
-        print("Play the game first to generate data!")
+        print("[Clustering] No data found. Play the game first!")
