@@ -19,15 +19,14 @@ def print_menu():
     print("  2. Train ML model         (model.py)")
     print("  3. Run clustering         (clustering.py)")
     print("  4. Show charts            (visualization.py)")
-    print("  5. Open dashboard         (dashboard.py)")
-    print("  6. Exit")
+    print("  5. Exit")
     print("=" * 50)
 
 # ── Main Loop ────────────────────────────────────────────────────────────
 def main():
     while True:
         print_menu()
-        choice = input("  Choose an option (1–6): ").strip()
+        choice = input("  Choose an option (1–5): ").strip()
 
         if choice == "1":
             print("\n[main] Starting game...")
@@ -60,17 +59,12 @@ def main():
                 generate_charts(rows, show=True)
             else:
                 print("No data found. Play the game first!")
-
         elif choice == "5":
-            print("\n[main] Opening Streamlit dashboard...")
-            os.system("streamlit run dashboard.py")
-
-        elif choice == "6":
             print("\nGoodbye!")
             sys.exit(0)
 
         else:
-            print("\nInvalid choice. Please enter 1–6.")
+            print("\nInvalid choice. Please enter 1–5.")
 
 # ── Entry Point ─────────────────────────────────────────────────────────
 if __name__ == "__main__":
