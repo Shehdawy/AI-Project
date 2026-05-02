@@ -1,131 +1,213 @@
 """
-clustering.py — AI Analyst Module (Part 1)
+dashboard.py — Real-Time Analytics Dashboard
 
 Role:
-- Use KMeans clustering to group player behavior patterns
-- Detect performance trends over time
+- Display game stats, ML prediction, and charts using Streamlit
 
-Run directly:
-    python clustering.py
+Run:
+    streamlit run dashboard.py
 """
 
+import streamlit as st
 import numpy as np
-from sklearn.cluster import KMeans
+import matplotlib.pyplot as plt
+import os
+import time
+
 from data_collector import load_dataset
+from model import predict_skill
+from clustering import run_clustering, analyze_patterns
+from visualization import plot_reaction_time, plot_accuracy, plot_clusters
 
-# ── Config ───────────────────────────────────────────────────────────────
-N_CLUSTERS = 3
+# ── Page Config ─────────────────────────────────────────────────────────
+st.set_page_config(
+    page_title="AI Aim Trainer Dashboard",
+    page_icon="🎯",
+    layout="wide",
+)
 
-CLUSTER_LABELS = {
-    0: "Struggling",
-    1: "Improving",
-    2: "Skilled"
-}
+# ── Custom CSS ──────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+    .stApp { background-color: #0f0f1a; color: #e0e0f0; }
 
-# ── Feature Preparation ──────────────────────────────────────────────────
-def prepare_cluster_features(rows: list[dict]) -> tuple:
-    """
-    Convert raw rows into feature matrix:
-    [reaction_time, hit]
-    """
+    [data-testid="metric-container"] {
+        background: #1a1a2e;
+        border: 1px solid #2a2a4a;
+        border-radius: 10px;
+        padding: 14px;
+    }
 
-    features = []
-    timestamps = []
+    h2, h3 { color: #7eb8f7; }
 
-    for r in rows:
-        features.append([r["reaction_time"], float(r["hit"])])
-        timestamps.append(r["timestamp"])
+    .skill-badge {
+        display: inline-block;
+        padding: 6px 18px;
+        border-radius: 20px;
+        font-size: 1.1rem;
+        font-weight: bold;
+        margin-top: 6px;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-    return np.array(features), timestamps
+# ── Helpers ─────────────────────────────────────────────────────────────
+def compute_stats(rows: list[dict]) -> dict:
+    if not rows:
+        return {
+            "hits": 0,
+            "misses": 0,
+            "total": 0,
+            "accuracy": 0.0,
+            "avg_rt": 0.0,
+            "avg_diff": 1.0,
+        }
 
-# ── KMeans Clustering ────────────────────────────────────────────────────
-def run_clustering(rows: list[dict]) -> dict:
-    """
-    Run clustering and return results
-    """
+    hits = sum(r["hit"] for r in rows)
+    total = len(rows)
+    misses = total - hits
 
-    if len(rows) < N_CLUSTERS:
-        print(f"[Clustering] Need at least {N_CLUSTERS} data points.")
-        return {}
-
-    features, timestamps = prepare_cluster_features(rows)
-
-    # Normalize features
-    mean = features.mean(axis=0)
-    std = features.std(axis=0) + 1e-8
-    features_norm = (features - mean) / std
-
-    # Train KMeans
-    kmeans = KMeans(n_clusters=N_CLUSTERS, random_state=42, n_init=10)
-    labels = kmeans.fit_predict(features_norm)
-
-    # Convert centers back to original scale
-    centers = kmeans.cluster_centers_ * std + mean
-
-    print(f"[Clustering] Clustered {len(rows)} points into {N_CLUSTERS} groups.")
-
-    for i in range(N_CLUSTERS):
-        count = np.sum(labels == i)
-        cx = round(centers[i][0], 3)
-        cy = round(centers[i][1], 3)
-
-        print(f"  Cluster {i}: {count} points | avg RT={cx}s, avg hit={cy:.2f}")
+    avg_rt = round(np.mean([r["reaction_time"] for r in rows]), 3)
+    avg_diff = round(np.mean([r["difficulty_level"] for r in rows]), 2)
+    accuracy = round((hits / total) * 100, 1)
 
     return {
-        "features": features,
-        "labels": labels,
-        "centers": centers,
-        "timestamps": timestamps,
+        "hits": hits,
+        "misses": misses,
+        "total": total,
+        "accuracy": accuracy,
+        "avg_rt": avg_rt,
+        "avg_diff": avg_diff,
     }
 
-# ── Pattern Recognition ──────────────────────────────────────────────────
-def analyze_patterns(rows: list[dict]) -> dict:
-    """
-    Compare early vs late performance
-    """
+def skill_color(skill: str) -> str:
+    return {
+        "Beginner": "#e74c3c",
+        "Average": "#f39c12",
+        "Pro": "#2ecc71"
+    }.get(skill, "#aaaaaa")
 
-    if len(rows) < 10:
-        return {"trend": "Not enough data for pattern analysis."}
+def dark_fig(*axes_list):
+    fig = axes_list[0].get_figure()
+    fig.patch.set_facecolor("#1a1a2e")
 
-    mid = len(rows) // 2
-    early = rows[:mid]
-    late = rows[mid:]
+    for ax in axes_list:
+        ax.set_facecolor("#16213e")
+        ax.tick_params(colors="white")
+        ax.xaxis.label.set_color("white")
+        ax.yaxis.label.set_color("white")
+        ax.title.set_color("white")
 
-    early_rt = np.mean([r["reaction_time"] for r in early])
-    late_rt = np.mean([r["reaction_time"] for r in late])
+        for spine in ax.spines.values():
+            spine.set_edgecolor("#444466")
 
-    early_acc = np.mean([r["hit"] for r in early])
-    late_acc = np.mean([r["hit"] for r in late])
+    return fig
 
-    rt_change = round(late_rt - early_rt, 4)
-    acc_change = round(late_acc - early_acc, 4)
+# ── Layout ──────────────────────────────────────────────────────────────
+st.title("🎯 AI Adaptive Aim Trainer — Dashboard")
+st.caption("Reads from dataset.csv and model.pkl")
 
-    rt_trend = "faster ✓" if rt_change < 0 else "slower ✗"
-    acc_trend = "better ✓" if acc_change > 0 else "worse ✗"
+# Sidebar controls
+auto_refresh = st.sidebar.checkbox("Auto-refresh (10s)", value=False)
 
-    patterns = {
-        "early_avg_rt": round(early_rt, 3),
-        "late_avg_rt": round(late_rt, 3),
-        "rt_change": rt_change,
-        "rt_trend": rt_trend,
-        "early_accuracy": round(early_acc * 100, 1),
-        "late_accuracy": round(late_acc * 100, 1),
-        "acc_change": round(acc_change * 100, 1),
-        "acc_trend": acc_trend,
-    }
+if auto_refresh:
+    time.sleep(10)
+    st.rerun()
 
-    print("\n[Pattern Recognition]")
-    print(f"  Reaction time : {patterns['early_avg_rt']}s → {patterns['late_avg_rt']}s ({rt_trend})")
-    print(f"  Accuracy      : {patterns['early_accuracy']}% → {patterns['late_accuracy']}% ({acc_trend})")
+if st.sidebar.button("Refresh Now"):
+    st.rerun()
 
-    return patterns
+# ── Load Data ───────────────────────────────────────────────────────────
+rows = load_dataset()
+stats = compute_stats(rows)
 
-# ── Entry Point ─────────────────────────────────────────────────────────
-if __name__ == "__main__":
-    rows = load_dataset()
+# ── Section 1: Stats ────────────────────────────────────────────────────
+st.markdown("## Session Statistics")
 
-    if rows:
-        run_clustering(rows)
-        analyze_patterns(rows)
-    else:
-        print("[Clustering] No data found. Play the game first!")
+col1, col2, col3, col4, col5 = st.columns(5)
+
+col1.metric("Hits", stats["hits"])
+col2.metric("Misses", stats["misses"])
+col3.metric("Accuracy", f"{stats['accuracy']}%")
+col4.metric("Avg Reaction", f"{stats['avg_rt']} s")
+col5.metric("Avg Difficulty", stats["avg_diff"])
+
+st.divider()
+
+# ── Section 2: ML Prediction ────────────────────────────────────────────
+st.markdown("## Player Skill Prediction")
+
+if not os.path.exists("model.pkl"):
+    st.warning("No model found. Run model.py first.")
+else:
+    skill = predict_skill(
+        avg_reaction_time=stats["avg_rt"],
+        accuracy=stats["accuracy"] / 100,
+        avg_difficulty=stats["avg_diff"],
+    )
+
+    color = skill_color(skill)
+
+    st.markdown(
+        f'<span class="skill-badge" style="background:{color}30; border:2px solid {color}; color:{color};">{skill}</span>',
+        unsafe_allow_html=True
+    )
+
+st.divider()
+
+# ── Section 3: Patterns ─────────────────────────────────────────────────
+st.markdown("## Performance Patterns")
+
+if len(rows) >= 10:
+    patterns = analyze_patterns(rows)
+
+    p1, p2 = st.columns(2)
+
+    with p1:
+        st.metric(
+            "Reaction Time",
+            f"{patterns['late_avg_rt']} s",
+            delta=f"{patterns['rt_change']:+.3f} s",
+            delta_color="inverse"
+        )
+
+    with p2:
+        st.metric(
+            "Accuracy",
+            f"{patterns['late_accuracy']}%",
+            delta=f"{patterns['acc_change']:+.1f}%"
+        )
+else:
+    st.info("Play more to unlock analysis (≥ 10 clicks)")
+
+st.divider()
+
+# ── Section 4: Charts ───────────────────────────────────────────────────
+st.markdown("## Charts")
+
+c1, c2, c3 = st.columns(3)
+
+with c1:
+    fig1, ax1 = plt.subplots()
+    plot_reaction_time(rows, ax1)
+    dark_fig(ax1)
+    st.pyplot(fig1)
+    plt.close(fig1)
+
+with c2:
+    fig2, ax2 = plt.subplots()
+    plot_accuracy(rows, ax2)
+    dark_fig(ax2)
+    st.pyplot(fig2)
+    plt.close(fig2)
+
+with c3:
+    fig3, ax3 = plt.subplots()
+    plot_clusters(rows, ax3)
+    dark_fig(ax3)
+    st.pyplot(fig3)
+    plt.close(fig3)
+
+# ── Footer ──────────────────────────────────────────────────────────────
+st.divider()
+st.caption(f"{len(rows)} rows loaded from dataset.csv")
