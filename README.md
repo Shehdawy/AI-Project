@@ -24,7 +24,6 @@
 ├── model.py            ← Trains & loads the ML model
 ├── clustering.py       ← KMeans clustering + pattern analysis
 ├── visualization.py    ← 3 matplotlib charts
-├── dashboard.py        ← Streamlit analytics dashboard
 ├── main.py             ← CLI menu launcher
 ├── reset.py            ← Reset all data and models
 ├── dataset.csv         ← Auto-generated during gameplay
@@ -75,23 +74,15 @@ python model.py
 - Saves the model to `model.pkl`
 - Prints a classification report in the terminal
 
-### Step 3 — Open the dashboard
 
-```bash
-python -m streamlit run dashboard.py
-```
 
-- Opens in your browser at `http://localhost:8501`
-- Shows: total hits/misses, accuracy, avg reaction time, skill prediction, pattern trends, and all 3 charts
-- Use the **Refresh** button or enable **Auto-refresh** in the sidebar
-
-### Step 4 — (Optional) View charts only
+### Step 3 — View charts only
 
 ```bash
 python visualization.py
 ```
 
-### Step 5 — (Optional) View clustering analysis in terminal
+### Step 4 — View clustering analysis in terminal
 
 ```bash
 python clustering.py
@@ -139,7 +130,7 @@ This deletes `dataset.csv` and `model.pkl`. See [reset.py](#) for details.
 - **Output:** `Beginner` / `Average` / `Pro`
 - **Labels** are generated automatically using a rule-based system on windows of 20 clicks
 
-### Unsupervised Learning — Behavior Clustering (`clustering.py`)
+### Unsupervised Learning — Behaviour Clustering (`clustering.py`)
 
 - **Algorithm:** KMeans with 3 clusters
 - **Features:** reaction time + hit/miss per click
@@ -188,21 +179,4 @@ Difficulty levels:
 | `timestamp` | float | Unix timestamp of click |
 | `difficulty_level` | 1/2/3 | Difficulty at time of click |
 
----
-
-## 🛠️ Troubleshooting
-
-**Pygame window doesn't open**
-→ Make sure `pygame` is installed: `pip install pygame`
-
-**"Not enough data to train"**
-→ Play the game for at least 2–3 minutes before running `model.py`
-
-**Dashboard shows empty charts**
-→ Play the game first so `dataset.csv` has data
-
-**`model.pkl` not found warning**
-→ Run `python model.py` to train and save the model
-
----
 
