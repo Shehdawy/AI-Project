@@ -41,7 +41,7 @@
 Install all dependencies with:
 
 ```bash
-pip install pygame numpy streamlit matplotlib sklearn
+pip install pygame numpy matplotlib sklearn
 ```
 
 ---
