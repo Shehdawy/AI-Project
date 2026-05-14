@@ -116,7 +116,7 @@ This deletes `dataset.csv` and `model.pkl`. See [reset.py](#) for details.
 | Action | Control |
 |---|---|
 | Click a target | Left mouse button |
-| Quit the game | Close the window or press `Ctrl+C` in terminal |
+| Quit the game | Close the window |
 
 ---
 
