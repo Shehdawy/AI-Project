@@ -28,8 +28,7 @@
 ├── reset.py            ← Reset all data and models
 ├── dataset.csv         ← Auto-generated during gameplay
 ├── model.pkl           ← Auto-generated after training
-├── requirements.txt    ← Python dependencies
-└── report.html         ← Full project report (open in browser)
+
 ```
 
 ---
@@ -128,7 +127,7 @@ This deletes `dataset.csv` and `model.pkl`. See [reset.py](#) for details.
 - **Algorithm:** Random Forest (50 decision trees)
 - **Input features:** avg reaction time, accuracy, avg difficulty level
 - **Output:** `Beginner` / `Average` / `Pro`
-- **Labels** are generated automatically using a rule-based system on windows of 20 clicks
+- **Labels** are generated automatically using a rule-based system on windows of 5 clicks
 
 ### Unsupervised Learning — Behaviour Clustering (`clustering.py`)
 
